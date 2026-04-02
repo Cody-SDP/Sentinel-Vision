@@ -1,0 +1,23 @@
+# ORCHESTRATION: This Control Plane manages event-driven execution 
+# SECURITY: Uses self-hosted runners to maintain local data residency 
+# OBSERVABILITY: Centralized logging captures hardware state and training metrics
+
+name: GPU Model Test
+on: [push]
+
+jobs:
+  run-tests:
+    # This tells GitHub to ignore its own computers and use yours instead!
+    runs-on: self-hosted 
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify GPU is connected
+        run: nvidia-smi
+
+      - name: Run AI Training Script
+        run: python train_model.py
+
+# CI/CD using GitHub Actions (workflow)
