@@ -1,5 +1,5 @@
-ultralytics
-opencv-python-headless
-requests
-python-json-logger
-bandit
+# Core runtime dependencies
+ultralytics==8.4.33
+opencv-python==4.13.0.92
+requests==2.33.1
+python-json-logger==3.2.1
