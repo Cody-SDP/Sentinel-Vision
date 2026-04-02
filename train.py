@@ -24,7 +24,7 @@ def main():
     # 3. Start Training
     model.train(
         data='C:/DEV/Sentinel-Vision/datasets/cctv/data.yaml',
-        epochs=50, 
+        epochs=1, 
         imgsz=640, 
         device=0,      # Force it to use your NVIDIA GPU
         name='sentinel_v1' # This names your output folder
