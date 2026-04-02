@@ -1,13 +1,33 @@
-# ORCHESTRATION: This Control Plane manages event-driven execution 
-# SECURITY: Uses self-hosted runners to maintain local data residency 
-# OBSERVABILITY: Centralized logging captures hardware state and training metrics
+# ORCHESTRATION: Multi-job pipeline with dependency gating
+# SECURITY: Static Analysis (SAST) must pass before hardware access
+# OBSERVABILITY: Centralized logging for both audit and execution
 
-name: GPU Model Test
+name: Sentinel-Vision Protected Pipeline
 on: [push]
 
 jobs:
+  # JOB 1: The Security Gatekeeper
+  security-audit:
+    runs-on: ubuntu-latest # Run this in the cloud to save your local electricity
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Security Tools
+        run: pip install bandit
+
+      - name: Run Bandit Security Scan
+        # This scans for hardcoded passwords, insecure imports, and "shell=True" risks
+        run: bandit -r . -ll -ii
+
+  # JOB 2: The Hardware Execution
   run-tests:
-    # This tells GitHub to ignore its own computers and use yours instead!
+    needs: security-audit # <--- CRITICAL: This "Gate" prevents training if Job 1 fails!
     runs-on: self-hosted 
     
     steps:
@@ -17,7 +37,7 @@ jobs:
       - name: Verify GPU is connected
         run: nvidia-smi
 
-      - name: Run AI Training Script
+      - name: Run AI Training Script (Verified Environment)
         run: python train.py
 
 # CI/CD using GitHub Actions (workflow)
