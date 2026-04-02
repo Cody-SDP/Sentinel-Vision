@@ -44,9 +44,16 @@ def main():
         )
 
         # --- 4. Training Configuration ---
-        dataset_path = 'C:/DEV/Sentinel-Vision/datasets/cctv/data.yaml'
-        epochs = 1
-        run_name = 'sentinel_v1'
+        # Dataset path is read from the DATASET_PATH environment variable so that
+        # the script works on any machine without editing source code.  A relative
+        # default is provided so contributors can place the dataset in the standard
+        # location (datasets/cctv/data.yaml) and run without any extra configuration.
+        dataset_path = os.environ.get(
+            "DATASET_PATH",
+            os.path.join("datasets", "cctv", "data.yaml"),
+        )
+        run_name = os.environ.get("RUN_NAME", "sentinel_v1")
+        epochs = int(os.environ.get("EPOCHS", "1"))
         log.log_training_config(
             log.training_logger, run_id,
             epochs=epochs,

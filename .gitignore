@@ -9,3 +9,11 @@ __pycache__/
 !results.png
 !val_batch0_pred.jpg
 !confusion_matrix.png
+# Exclude demo video files (too large for git); see demo/README.md
+demo/*.mp4
+demo/*.avi
+demo/*.mov
+demo/*.mkv
+demo/*.webm
+# Exclude local env overrides
+.env
