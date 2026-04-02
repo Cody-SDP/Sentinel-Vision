@@ -27,6 +27,12 @@ COPY --chown=appuser:appuser . .
 # Drop to the non-root user for all subsequent commands and the container runtime
 USER appuser
 
-# Run demo mode by default: processes demo/sample.mp4 and saves annotated output.
-# Override by passing arguments: docker run sentinel-vision python detect_live.py --source 0
-CMD ["python", "detect_live.py", "--save-output"]
+# Default: print usage instructions and exit cleanly.
+# Pass --source to run inference:
+#   docker run --rm -v "$(pwd)/videos:/app/videos" sentinel-vision \
+#       python detect_live.py --source /app/videos/clip.mp4 --save-output
+# Override for webcam (Linux only — requires host device and group access):
+#   docker run --rm --device /dev/video0:/dev/video0 --group-add video \
+#       -v "$(pwd)/runs:/app/runs" sentinel-vision \
+#       python detect_live.py --source 0 --save-output
+CMD ["python", "detect_live.py"]

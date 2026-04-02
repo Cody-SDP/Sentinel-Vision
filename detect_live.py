@@ -21,7 +21,6 @@ import logger as log
 # ---------------------------------------------------------------------------
 DEFAULT_WEIGHTS_LOCAL = os.path.join("weights", "best.pt")
 DEFAULT_WEIGHTS_FALLBACK = "yolov8m.pt"
-DEFAULT_SOURCE = os.path.join("demo", "sample.mp4")
 DEFAULT_OUTPUT_PATH = os.path.join("runs", "detect", "output")
 LOW_FPS_THRESHOLD = 15.0
 
@@ -55,31 +54,43 @@ def _resolve_source(cli_source):
     Resolve the input source:
     - '0' or a numeric digit string → integer webcam index
     - Path to a video file → verified to exist, or a clear error is printed
-    - Defaults to DEFAULT_SOURCE with a helpful message if not found
+    - No source provided → print a beginner-friendly usage message and exit
     """
-    source = cli_source or os.environ.get("VIDEO_SOURCE") or DEFAULT_SOURCE
+    source = cli_source or os.environ.get("VIDEO_SOURCE")
+
+    if not source:
+        print(
+            "\n[INFO] No input source specified.\n"
+            "\n"
+            "       To run with a local video file:\n"
+            "           python detect_live.py --source /path/to/video.mp4\n"
+            "\n"
+            "       To run with your webcam:\n"
+            "           python detect_live.py --source 0\n"
+            "\n"
+            "       Optional flags:\n"
+            "           --save-output        Save annotated output to disk\n"
+            "           --show               Show a live preview window (requires a display)\n"
+            "           --model-path PATH    Use custom YOLO weights instead of the default\n"
+            "\n"
+            "       If no custom weights are found, yolov8m.pt is downloaded automatically\n"
+            "       from Ultralytics (~52 MB) and detects COCO classes (person, car, etc.).\n",
+            file=sys.stderr,
+        )
+        sys.exit(0)
 
     if source.isdigit():
         return int(source)
 
     if not os.path.exists(source):
-        if source == DEFAULT_SOURCE:
-            print(
-                f"\n[ERROR] Demo video not found: '{DEFAULT_SOURCE}'\n"
-                "        To fix this, add any short video file:\n"
-                f"            cp /path/to/your/video.mp4 {DEFAULT_SOURCE}\n\n"
-                "        Or point to an existing file:\n"
-                "            python detect_live.py --source /path/to/video.mp4\n\n"
-                "        Or use your webcam:\n"
-                "            python detect_live.py --source 0\n",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"\n[ERROR] Source file not found: '{source}'\n"
-                "        Check the path and try again.\n",
-                file=sys.stderr,
-            )
+        print(
+            f"\n[ERROR] Source file not found: '{source}'\n"
+            "        Check the path and try again.\n"
+            "\n"
+            "        To use your webcam instead:\n"
+            "            python detect_live.py --source 0\n",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     return source
@@ -98,25 +109,25 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Demo mode (sample video, no webcam needed):
-  python detect_live.py
+  # Run inference on a local video file:
+  python detect_live.py --source /path/to/video.mp4
 
   # Webcam mode:
   python detect_live.py --source 0
 
-  # Custom video with saved output:
-  python detect_live.py --source my_video.mp4 --save-output
+  # Save annotated output to disk:
+  python detect_live.py --source /path/to/video.mp4 --save-output
 
   # Custom weights with live preview:
-  python detect_live.py --model-path weights/best.pt --show
+  python detect_live.py --source 0 --model-path weights/best.pt --show
         """,
     )
     parser.add_argument(
         "--source",
         default=None,
         help=(
-            f"Input source: path to a video file, or '0' for webcam. "
-            f"Env var: VIDEO_SOURCE. Default: {DEFAULT_SOURCE}"
+            "Input source: path to a video file, or '0' for webcam. "
+            "Env var: VIDEO_SOURCE. Required (no default — see usage above)."
         ),
     )
     parser.add_argument(

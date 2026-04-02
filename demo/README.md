@@ -1,25 +1,32 @@
 # demo/
 
-This directory is the default location for sample input files.
+This directory is available as a convenient location to store a local test video.
 
-## Quick start
+## Usage
 
-Place any short video file here and name it `sample.mp4`:
+Place any video file here and pass it to `detect_live.py` with `--source`:
 
 ```bash
 cp /path/to/your/video.mp4 demo/sample.mp4
+python detect_live.py --source demo/sample.mp4
 ```
 
-Then run:
+Or use an absolute path — the `demo/` directory is just a suggestion:
 
 ```bash
-python detect_live.py
+python detect_live.py --source /path/to/any/video.mp4
 ```
 
-## Why is sample.mp4 not included?
+If you do not have a video file, use your webcam:
 
-Video files are too large for a Git repository. You can use any `.mp4`, `.avi`,
-or `.mov` clip — even a 5–10 second clip works fine for a demo.
+```bash
+python detect_live.py --source 0
+```
+
+## Why is no sample video included?
+
+Video files are too large for a Git repository. The app does not bundle one.
+Running the app without `--source` prints usage instructions and exits cleanly — no stack trace.
 
 **Free sample video sources:**
 - [Pexels](https://www.pexels.com/videos/) — free stock footage (no sign-up required)
@@ -28,4 +35,4 @@ or `.mov` clip — even a 5–10 second clip works fine for a demo.
 
 ## Supported formats
 
-Any format that OpenCV can read works: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`.
+Any format that OpenCV can read: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`.

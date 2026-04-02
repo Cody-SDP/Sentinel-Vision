@@ -2,7 +2,6 @@
 
 **A project by Cody Sims**
 
-[![Status: Deployment-Ready Foundation](https://img.shields.io/badge/status-deployment--ready%20foundation-brightgreen)](https://github.com/Cody-SDP/Sentinel-Vision)
 [![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://bandit.readthedocs.io/)
 
 ---
@@ -12,6 +11,8 @@
 Sentinel-Vision is a real-time object detection system designed for local "Edge" deployment. It uses a YOLOv8 model to identify objects in video files or live webcam feeds, with structured JSON logging for every inference session.
 
 **Works on CPU — no GPU required.** A GPU will be used automatically if one is available.
+
+> **No bundled sample video.** This repository does not include a video file. You supply your own — either a local video file or your webcam. See [Quick Start](#-quick-start-local) below.
 
 ---
 
@@ -33,8 +34,7 @@ Sentinel-Vision is a real-time object detection system designed for local "Edge"
 
 - **Zero-Cloud Privacy:** All processing happens locally.
 - **CPU & GPU:** Runs on any modern machine; CUDA accelerates if available.
-- **Plug-and-Play:** Works out of the box with a sample video — no source edits needed.
-- **Flexible Input:** Video file or webcam via a single flag.
+- **Flexible Input:** Local video file or webcam via a single flag.
 - **Structured Logging:** JSON audit trail with 11 metric categories written to `logs/inference.log`.
 - **Saved Output:** Annotated video/frames can be saved to disk with `--save-output`.
 
@@ -51,9 +51,6 @@ Sentinel-Vision/
 ├── requirements-dev.txt  # Development tools (bandit, etc.)
 ├── Dockerfile            # CPU-friendly container image
 ├── .env.example          # Optional environment variable reference
-├── demo/
-│   ├── README.md         # Instructions for adding a sample video
-│   └── sample.mp4        # ← Add your own video here (not tracked by git)
 ├── weights/
 │   └── best.pt           # ← Place custom weights here (not tracked by git)
 ├── logs/                 # Auto-created at runtime
@@ -76,17 +73,36 @@ Sentinel-Vision/
 git clone https://github.com/Cody-SDP/Sentinel-Vision.git
 cd Sentinel-Vision
 
-# 2. Install dependencies
+# 2. (Recommended) Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
-
-# 3. Add a sample video (any .mp4 clip works)
-cp /path/to/your/video.mp4 demo/sample.mp4
-
-# 4. Run demo mode
-python detect_live.py
 ```
 
-That's it. Detection results are logged to `logs/inference.log`.
+### A. Test with a local video file
+
+```bash
+python detect_live.py --source /path/to/your/video.mp4
+```
+
+Add `--save-output` to write annotated frames to `runs/detect/output/`:
+
+```bash
+python detect_live.py --source /path/to/your/video.mp4 --save-output
+```
+
+### B. Test with your webcam
+
+```bash
+python detect_live.py --source 0
+# Use --source 1, 2, etc. for additional cameras
+```
+
+If no `--source` is provided, the app prints usage instructions and exits cleanly.
+
+Detection results are logged to `logs/inference.log`.
 
 ---
 
@@ -98,40 +114,47 @@ That's it. Detection results are logged to `logs/inference.log`.
 docker build -t sentinel-vision .
 ```
 
-### Demo mode (sample video — no webcam needed)
+### C. Docker — test with a local video file
+
+Mount a directory containing your video file and a `runs/` directory to capture output:
 
 ```bash
-# Mount the demo/ folder so the container can read your sample video,
-# and mount runs/ so annotated output is saved to your host machine.
 docker run --rm \
-  -v "$(pwd)/demo:/app/demo" \
+  -v "/path/to/your/videos:/app/videos" \
   -v "$(pwd)/runs:/app/runs" \
-  sentinel-vision
+  sentinel-vision \
+  python detect_live.py --source /app/videos/clip.mp4 --save-output
 ```
 
-Annotated frames are saved to `runs/detect/output/` on your host.
+Annotated frames are saved to `runs/detect/output/` on your host machine.
 
-### Webcam mode (Linux only)
+### D. Docker — webcam mode (Linux only)
+
+Docker can pass a webcam device through to the container **on Linux only**. macOS and Windows (Docker Desktop) do not support host device passthrough for webcam devices.
+
+On Linux, pass the device node and add the container user to the `video` group:
 
 ```bash
 docker run --rm \
   --device /dev/video0:/dev/video0 \
+  --group-add video \
   -v "$(pwd)/runs:/app/runs" \
-  sentinel-vision python detect_live.py --source 0 --save-output
+  sentinel-vision \
+  python detect_live.py --source 0 --save-output
 ```
 
 > **macOS / Windows:** Docker cannot pass webcam devices through to the container on these platforms. Use local mode (`python detect_live.py --source 0`) instead.
+
+> **Live preview (`--show`) inside Docker** requires X11 forwarding or a display server configured on the host. For most use cases, omit `--show` and use `--save-output` to capture results to disk.
 
 ---
 
 ## 🎬 Input Modes
 
-### Demo mode — sample video
+### Local video file
 
 ```bash
-python detect_live.py
-# or explicitly:
-python detect_live.py --source demo/sample.mp4
+python detect_live.py --source /path/to/video.mp4
 ```
 
 ### Webcam mode
@@ -144,17 +167,17 @@ python detect_live.py --source 0
 ### Live preview window
 
 ```bash
-python detect_live.py --show
+python detect_live.py --source 0 --show
 # Requires a graphical display (not available inside Docker by default)
 ```
 
 ### Save annotated output
 
 ```bash
-python detect_live.py --save-output
+python detect_live.py --source /path/to/video.mp4 --save-output
 # Output saved to runs/detect/output/ by default
 
-python detect_live.py --save-output --output-path my_results/
+python detect_live.py --source 0 --save-output --output-path my_results/
 ```
 
 ---
@@ -167,7 +190,7 @@ python detect_live.py --save-output --output-path my_results/
 | `--model-path /path/to/weights.pt` | Specified weights are loaded |
 | Neither is present | Falls back to `yolov8m.pt` (auto-downloaded from Ultralytics, ~52 MB) |
 
-**Fallback note:** `yolov8m.pt` detects COCO classes (person, car, dog, etc.), not the custom threat classes this system was trained for. It is provided as a zero-setup demo only.
+**Fallback note:** `yolov8m.pt` detects COCO classes (person, car, dog, etc.), not the custom threat classes this system was trained for. It is provided as a zero-setup fallback only.
 
 To use custom weights:
 
@@ -177,7 +200,7 @@ mkdir weights
 cp /path/to/best.pt weights/best.pt
 
 # Or pass the path explicitly
-python detect_live.py --model-path /path/to/best.pt
+python detect_live.py --source 0 --model-path /path/to/best.pt
 ```
 
 ---
@@ -188,7 +211,7 @@ All settings can be controlled via CLI flags or environment variables. Copy `.en
 
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
-| `--source` | `VIDEO_SOURCE` | `demo/sample.mp4` | Input file or `0` for webcam |
+| `--source` | `VIDEO_SOURCE` | *(none — required)* | Video file path or `0` for webcam |
 | `--model-path` | `MODEL_PATH` | `weights/best.pt` → `yolov8m.pt` | Weights file |
 | `--output-path` | `OUTPUT_PATH` | `runs/detect/output` | Output directory |
 | `--save-output` | — | off | Save annotated video to disk |
@@ -202,7 +225,7 @@ All settings can be controlled via CLI flags or environment variables. Copy `.en
 python detect_live.py [OPTIONS]
 
 Options:
-  --source PATH       Video file path or '0' for webcam
+  --source PATH       Video file path or '0' for webcam (required)
   --model-path PATH   Path to .pt weights file
   --save-output       Save annotated output to disk
   --output-path DIR   Directory for saved output
@@ -240,9 +263,10 @@ The Docker image runs as a non-root user (`appuser`, UID 1000). A `.dockerignore
 - The GitHub Actions workflow has a top-level `permissions: contents: read` block, restricting the default `GITHUB_TOKEN` to read-only access.
 - `bandit` is pinned to `1.8.3` both in `requirements-dev.txt` and the CI install step, preventing silent scan-behaviour changes from upstream upgrades.
 - The Bandit SAST gate must pass before the self-hosted GPU runner is accessed.
+- The GPU training job runs only on the upstream repository; forks skip it automatically, so contributors see a clean pass rather than a permanently-queued job.
 
 ### Dependency security
-All runtime dependencies are pinned to exact versions (`requirements.txt`). No known CVEs exist against the pinned versions (verified at time of last audit). Run `bandit -r . -ll -ii` locally or install `pip-audit` to re-verify:
+All runtime dependencies are pinned to exact versions (`requirements.txt`). Run `bandit -r . -ll -ii` locally or install `pip-audit` to re-verify:
 
 ```bash
 pip install pip-audit
@@ -257,8 +281,8 @@ pip-audit -r requirements.txt
 
 Every push triggers a two-stage pipeline:
 
-1. **Bandit SAST** — scans for hardcoded credentials, insecure imports, `shell=True` risks
-2. **Hardware Execution** — runs only if Stage 1 passes, on the private RTX 4070 SUPER runner
+1. **Bandit SAST** — scans for hardcoded credentials, insecure imports, `shell=True` risks (runs on GitHub-hosted runner for all contributors)
+2. **Hardware Execution** — runs only on the private RTX 4070 SUPER runner, and only on the upstream repository (skipped automatically for forks)
 
 Install dev tools locally:
 
@@ -273,8 +297,11 @@ bandit -r . -ll -ii
 
 ## 🔍 Troubleshooting
 
-**`[ERROR] Demo video not found: 'demo/sample.mp4'`**
-→ Add any `.mp4` file: `cp /path/to/video.mp4 demo/sample.mp4`
+**No source specified (default behavior)**
+→ The app prints usage instructions and exits. Pass `--source /path/to/video.mp4` or `--source 0` for webcam.
+
+**`[ERROR] Source file not found: '...'`**
+→ Check the path. Use an absolute path if the relative path isn't resolving correctly.
 
 **`[INFO] No custom weights found. Falling back to 'yolov8m.pt'`**
 → Normal on first run. The model (~52 MB) downloads automatically. Place custom weights at `weights/best.pt` to use them.
@@ -289,12 +316,13 @@ bandit -r . -ll -ii
 → Install: `apt-get install libgl1 libglib2.0-0`
 
 **Webcam not detected in Docker**
-→ Pass `--device /dev/video0:/dev/video0` to `docker run`. Linux only — not supported on macOS or Windows Docker Desktop.
+→ Pass `--device /dev/video0:/dev/video0 --group-add video` to `docker run`. Linux only — not supported on macOS or Windows Docker Desktop.
 
 ---
 
 ## ⚠️ Known Limitations
 
-- **Webcam in Docker** only works on Linux (`--device /dev/video0`). macOS and Windows users should run locally for webcam support.
+- **No bundled sample video.** The repository does not include a video file. You must supply your own (local file or webcam).
+- **Webcam in Docker** only works on Linux (`--device /dev/video0 --group-add video`). macOS and Windows users should run locally for webcam support.
 - **Custom weights** are not included in the repository. The fallback `yolov8m.pt` detects COCO classes, not custom threat classes.
 - **Live preview** (`--show`) requires a graphical display and is not available inside a standard Docker container without X11 forwarding.

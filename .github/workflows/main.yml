@@ -36,9 +36,14 @@ jobs:
         run: bandit -r . -ll -ii
 
   # JOB 2: The Hardware Execution
+  # This job runs only on the upstream repository (not on forks) because it
+  # requires a private self-hosted GPU runner.  Outside contributors will see
+  # the security-audit job pass and this job skipped rather than permanently
+  # queued or failing.
   run-tests:
     needs: security-audit # <--- CRITICAL: This "Gate" prevents training if Job 1 fails!
-    runs-on: self-hosted 
+    if: github.repository == 'Cody-SDP/Sentinel-Vision'
+    runs-on: self-hosted
     
     steps:
       - name: Checkout code
