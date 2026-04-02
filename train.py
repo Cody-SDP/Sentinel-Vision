@@ -9,26 +9,115 @@ DESCRIPTION: Real-time object detection and inference for security applications.
 
 from ultralytics import YOLO
 import torch
+import os
+import time
+
+import logger as log
 
 def main():
-    # 1. Verify GPU is ready (NVIDIA instructors love this check)
-    if torch.cuda.is_available():
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
-    else:
-        print("GPU not found. Check your drivers!")
-        return
+    run_id = log.new_run_id()
 
-    # 2. Load the model (using the 'Medium' version for better school security)
-    model = YOLO('yolov8m.pt') 
+    # --- 1. Run Info ---
+    log.log_run_info(log.training_logger, run_id, "train")
 
-    # 3. Start Training
-    model.train(
-        data='C:/DEV/Sentinel-Vision/datasets/cctv/data.yaml',
-        epochs=1, 
-        imgsz=640, 
-        device=0,      # Force it to use your NVIDIA GPU
-        name='sentinel_v1' # This names your output folder
-    )
+    try:
+        # --- 2. Hardware / Environment ---
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            vram = f"{round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 1)}GB"
+            log.log_hardware(log.training_logger, run_id, gpu_name, vram, "available")
+            print(f"Using GPU: {gpu_name}")
+        else:
+            log.log_error(log.training_logger, run_id, "gpu_not_found",
+                          "No CUDA-capable GPU detected.")
+            print("GPU not found. Check your drivers!")
+            return
+
+        # --- 3. Model Info ---
+        model = YOLO('yolov8m.pt')
+        log.log_model_info(
+            log.training_logger, run_id,
+            architecture="YOLOv8 Medium",
+            parameters="25M",
+            checkpoint_path="yolov8m.pt",
+            model_version="yolov8m",
+        )
+
+        # --- 4. Training Configuration ---
+        dataset_path = 'C:/DEV/Sentinel-Vision/datasets/cctv/data.yaml'
+        epochs = 1
+        run_name = 'sentinel_v1'
+        log.log_training_config(
+            log.training_logger, run_id,
+            epochs=epochs,
+            image_size=640,
+            dataset_name=dataset_path,
+            run_name=run_name,
+        )
+
+        # --- 5. Start Training ---
+        start_time = time.time()
+        results = model.train(
+            data=dataset_path,
+            epochs=epochs,
+            imgsz=640,
+            device=0,
+            name=run_name,
+        )
+        elapsed = time.time() - start_time
+
+        # --- 6. Per-Epoch Metrics (post-training summary) ---
+        try:
+            map50 = float(results.results_dict.get("metrics/mAP50(B)", 0))
+            precision = float(results.results_dict.get("metrics/precision(B)", 0))
+            recall = float(results.results_dict.get("metrics/recall(B)", 0))
+            box_loss = float(results.results_dict.get("train/box_loss", 0))
+        except Exception:
+            map50, precision, recall, box_loss = 0.0, 0.0, 0.0, 0.0
+
+        log.log_epoch_metrics(
+            log.training_logger, run_id,
+            epoch=epochs, total_epochs=epochs,
+            loss=box_loss, accuracy=map50, map50=map50,
+        )
+
+        # --- 7. Evaluation Metrics ---
+        log.log_evaluation_metrics(
+            log.training_logger, run_id,
+            precision=precision, recall=recall,
+            false_positives=None, false_negatives=None,
+        )
+
+        # --- 8. Training Completion ---
+        checkpoint_path = os.path.join("runs", "detect", run_name, "weights", "best.pt")
+        log.log_training_complete(
+            log.training_logger, run_id,
+            total_epochs=epochs,
+            final_accuracy=map50,
+            checkpoint_path=checkpoint_path,
+        )
+
+        # --- 9. Output Tracking ---
+        results_dir = os.path.join("runs", "detect", run_name)
+        log.log_output_paths(
+            log.training_logger, run_id,
+            output_file_path=checkpoint_path,
+            saved_results_location=results_dir,
+            log_file_location=os.path.join("logs", "training.log"),
+        )
+
+        # --- 10. Session Summary ---
+        log.log_session_summary(
+            log.training_logger, run_id,
+            total_frames=None,
+            total_detections=None,
+            session_duration_s=elapsed,
+        )
+
+    except Exception as exc:
+        log.log_error(log.training_logger, run_id, "training_failure",
+                      str(exc), exception=exc)
+        raise
 
 if __name__ == '__main__':
     main()
