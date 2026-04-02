@@ -1,6 +1,7 @@
 .git/
 runs/
 datasets/
+logs/
 __pycache__/
 *.pt
 *.jpg
