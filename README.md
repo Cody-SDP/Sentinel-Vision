@@ -226,6 +226,31 @@ Log files rotate at 10 MB, keeping the last 5 backups.
 
 ---
 
+## 🔒 Security
+
+### Container security
+The Docker image runs as a non-root user (`appuser`, UID 1000). A `.dockerignore` file prevents `.env` files, `.git/` history, and model weights from being copied into the image at build time.
+
+### Secrets management
+- Never commit a populated `.env` file. It is listed in `.gitignore`.
+- Use the provided `.env.example` as a reference — copy it to `.env` locally and populate as needed.
+- Model paths, dataset paths, and video sources are all controlled via environment variables or CLI flags — no secrets are hardcoded.
+
+### CI/CD security
+- The GitHub Actions workflow has a top-level `permissions: contents: read` block, restricting the default `GITHUB_TOKEN` to read-only access.
+- `bandit` is pinned to `1.8.3` both in `requirements-dev.txt` and the CI install step, preventing silent scan-behaviour changes from upstream upgrades.
+- The Bandit SAST gate must pass before the self-hosted GPU runner is accessed.
+
+### Dependency security
+All runtime dependencies are pinned to exact versions (`requirements.txt`). No known CVEs exist against the pinned versions (verified at time of last audit). Run `bandit -r . -ll -ii` locally or install `pip-audit` to re-verify:
+
+```bash
+pip install pip-audit
+pip-audit -r requirements.txt
+```
+
+---
+
 ## 👨‍💻 Contributor Instructions
 
 ### Security-Gated CI/CD

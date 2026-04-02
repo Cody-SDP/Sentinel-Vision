@@ -1,0 +1,41 @@
+# .dockerignore — files that must NOT be copied into the Docker image
+#
+# Security rationale:
+# - .env may contain secrets (API keys, paths, tokens); NEVER ship it in an image.
+# - .git/ exposes full commit history, contributor names, and repo metadata.
+# - *.pt weight files can be hundreds of MB and must be mounted at runtime, not baked in.
+# - logs/ and runs/ are runtime artefacts that should not be part of the build context.
+# - __pycache__ / *.pyc files are environment-specific byte-code and add no value.
+
+# Secrets and configuration
+.env
+
+# Version control metadata
+.git/
+.github/
+
+# Model weights (large files; mount via -v at runtime instead)
+weights/
+*.pt
+
+# Runtime artefacts
+logs/
+runs/
+datasets/
+
+# Demo video files (large; mount via -v at runtime)
+demo/*.mp4
+demo/*.avi
+demo/*.mov
+demo/*.mkv
+demo/*.webm
+
+# Python byte-code
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor / OS noise
+.DS_Store
+*.swp
