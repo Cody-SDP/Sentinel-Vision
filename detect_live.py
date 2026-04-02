@@ -280,7 +280,11 @@ def main():
             f"{total_detections} detection(s) in {session_duration:.1f}s."
         )
         if args.save_output:
-            print(f"[INFO] Annotated output saved to: {output_path}")
+            print(
+                f"[INFO] Annotated output saved to: {output_path}\n"
+                "       (YOLO writes into a 'predict/' sub-directory inside that path;\n"
+                "        look for your files in e.g. runs/detect/output/predict/)"
+            )
 
     except KeyboardInterrupt:
         print("\n[INFO] Interrupted by user.")

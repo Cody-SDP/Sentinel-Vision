@@ -87,7 +87,7 @@ pip install -r requirements.txt
 python detect_live.py --source /path/to/your/video.mp4
 ```
 
-Add `--save-output` to write annotated frames to `runs/detect/output/`:
+Add `--save-output` to write annotated frames to `runs/detect/output/predict/`:
 
 ```bash
 python detect_live.py --source /path/to/your/video.mp4 --save-output
@@ -116,9 +116,18 @@ docker build -t sentinel-vision .
 
 ### C. Docker — test with a local video file
 
-Mount a directory containing your video file and a `runs/` directory to capture output:
+Mount a directory containing your video file and a `runs/` directory to capture output.
+
+> **First-run prerequisite:** Create the `runs/` directory on your host **before** running the
+> container. If it does not exist, Docker creates it as `root:root`, which prevents the
+> container's non-root user (`appuser`, UID 1000) from writing output files — causing a
+> `PermissionError` at runtime.
 
 ```bash
+# Step 1 — create the output directory on your host (required once)
+mkdir -p runs
+
+# Step 2 — run inference with a mounted video file
 docker run --rm \
   -v "/path/to/your/videos:/app/videos" \
   -v "$(pwd)/runs:/app/runs" \
@@ -126,15 +135,20 @@ docker run --rm \
   python detect_live.py --source /app/videos/clip.mp4 --save-output
 ```
 
-Annotated frames are saved to `runs/detect/output/` on your host machine.
+Annotated frames are saved inside `runs/detect/output/predict/` on your host machine.
+YOLO appends a `predict/` sub-directory automatically (incrementing to `predict2/`, `predict3/`, etc. on repeat runs).
 
 ### D. Docker — webcam mode (Linux only)
 
 Docker can pass a webcam device through to the container **on Linux only**. macOS and Windows (Docker Desktop) do not support host device passthrough for webcam devices.
 
-On Linux, pass the device node and add the container user to the `video` group:
+On Linux, pass the device node and add the container user to the `video` group. The same `mkdir -p runs` prerequisite applies:
 
 ```bash
+# Step 1 — create the output directory on your host (required once)
+mkdir -p runs
+
+# Step 2 — run inference with a webcam device passed through
 docker run --rm \
   --device /dev/video0:/dev/video0 \
   --group-add video \
@@ -146,6 +160,8 @@ docker run --rm \
 > **macOS / Windows:** Docker cannot pass webcam devices through to the container on these platforms. Use local mode (`python detect_live.py --source 0`) instead.
 
 > **Live preview (`--show`) inside Docker** requires X11 forwarding or a display server configured on the host. For most use cases, omit `--show` and use `--save-output` to capture results to disk.
+
+> **Device node:** Webcam device paths vary by system (`/dev/video0`, `/dev/video2`, etc.). Run `ls /dev/video*` on your host to find the correct path before running the container.
 
 ---
 
@@ -175,7 +191,7 @@ python detect_live.py --source 0 --show
 
 ```bash
 python detect_live.py --source /path/to/video.mp4 --save-output
-# Output saved to runs/detect/output/ by default
+# Output saved to runs/detect/output/predict/ by default (YOLO appends predict/ automatically)
 
 python detect_live.py --source 0 --save-output --output-path my_results/
 ```
@@ -297,6 +313,13 @@ bandit -r . -ll -ii
 
 ## 🔍 Troubleshooting
 
+**`[ERROR] Permission denied: 'runs/...'` inside Docker**
+→ The `runs/` directory was created by Docker as `root`. Remove it and recreate it as your own user before mounting:
+```bash
+sudo rm -rf runs && mkdir -p runs
+```
+Then re-run the `docker run` command.
+
 **No source specified (default behavior)**
 → The app prints usage instructions and exits. Pass `--source /path/to/video.mp4` or `--source 0` for webcam.
 
@@ -323,6 +346,8 @@ bandit -r . -ll -ii
 ## ⚠️ Known Limitations
 
 - **No bundled sample video.** The repository does not include a video file. You must supply your own (local file or webcam).
-- **Webcam in Docker** only works on Linux (`--device /dev/video0 --group-add video`). macOS and Windows users should run locally for webcam support.
+- **Docker output directory:** The `runs/` directory must exist on your host before running the container with `--save-output`. If Docker creates it automatically it will be owned by `root`, causing a `PermissionError` inside the container. Run `mkdir -p runs` first.
+- **Webcam in Docker** only works on Linux (`--device /dev/video0 --group-add video`). macOS and Windows users should run locally for webcam support. Device nodes vary by system — check with `ls /dev/video*`.
 - **Custom weights** are not included in the repository. The fallback `yolov8m.pt` detects COCO classes, not custom threat classes.
 - **Live preview** (`--show`) requires a graphical display and is not available inside a standard Docker container without X11 forwarding.
+- **Saved output location:** YOLO appends a `predict/` sub-directory to the output path (e.g. `runs/detect/output/predict/`). On repeat runs this increments to `predict2/`, `predict3/`, etc.
