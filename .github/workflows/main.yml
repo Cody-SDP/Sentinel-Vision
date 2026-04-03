@@ -1,9 +1,13 @@
 # ORCHESTRATION: Multi-job pipeline with dependency gating
-# SECURITY: Static Analysis (SAST) must pass before hardware access
+# SECURITY: SAST (Bandit) + SCA (pip-audit) must pass before hardware access
 # OBSERVABILITY: Centralized logging for both audit and execution
 
 name: Sentinel-Vision Protected Pipeline
-on: [push]
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 # Restrict the default GITHUB_TOKEN to the minimum permissions needed.
 # Without this, the token has broad write access to the repository by default,
@@ -25,6 +29,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit -r requirements.txt
+
       - name: Install Security Tools
         # Pin the version to match requirements-dev.txt so CI and local runs
         # use identical tooling and an unpinned upgrade cannot silently change
@@ -33,7 +46,7 @@ jobs:
 
       - name: Run Bandit Security Scan
         # This scans for hardcoded passwords, insecure imports, and "shell=True" risks
-        run: bandit -r . -ll -ii
+        run: bandit -r . -x ./tests,./venv,./.venv,./__pycache__
 
   # JOB 2: The Hardware Execution
   # This job runs only on the upstream repository (not on forks) because it
@@ -41,8 +54,8 @@ jobs:
   # the security-audit job pass and this job skipped rather than permanently
   # queued or failing.
   run-tests:
-    needs: security-audit # <--- CRITICAL: This "Gate" prevents training if Job 1 fails!
-    if: github.repository == 'Cody-SDP/Sentinel-Vision'
+    needs: security-audit # <--- This "Gate" prevents training if Job 1 fails!
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'Cody-SDP/Sentinel-Vision'
     runs-on: self-hosted
     
     steps:
@@ -55,4 +68,3 @@ jobs:
       - name: Run AI Training Script (Verified Environment)
         run: python train.py
 
-# CI/CD using GitHub Actions (workflow)
