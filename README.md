@@ -1,9 +1,12 @@
 # 🛡️ Sentinel-Vision: AI-Driven Threat Detection
 
-**A project by Cody Sims**
+**A real-time object detection system with Docker, CI/CD, and structured logging — built by Cody Sims**
 
+[![Build Status](https://img.shields.io/github/actions/workflow/status/Cody-SDP/Sentinel-Vision/main.yml?label=build)](https://github.com/Cody-SDP/Sentinel-Vision/actions)
+[![Python](https://img.shields.io/badge/python-3.12-blue)]()
+[![Docker](https://img.shields.io/badge/docker-ready-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-green)]()
 [![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://bandit.readthedocs.io/)
-
 ---
 
 ## Overview
