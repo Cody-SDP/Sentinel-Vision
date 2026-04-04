@@ -12,23 +12,32 @@ import json
 import uuid
 import os
 import subprocess
+import shutil
 from datetime import datetime, timezone
 
 
 def _get_git_context():
     """Retrieve current git commit SHA and branch name for audit traceability."""
     context = {"git_commit": "unknown", "branch": "unknown"}
+    git_executable = shutil.which("git")
+    if not git_executable:
+        return context
     try:
         context["git_commit"] = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
+            [git_executable, "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
         context["branch"] = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-    except Exception:
-        pass
+            [git_executable, "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except (subprocess.SubprocessError, OSError, UnicodeDecodeError):
+        logging.getLogger(__name__).debug(
+            "Unable to resolve git context for logger metadata.",
+            exc_info=True,
+        )
     return context
 
 
