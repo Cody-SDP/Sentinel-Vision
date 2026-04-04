@@ -11,7 +11,7 @@ import logging.handlers
 import json
 import uuid
 import os
-import subprocess
+import subprocess  # nosec B404
 import shutil
 from datetime import datetime, timezone
 
@@ -23,17 +23,17 @@ def _get_git_context():
     if not git_executable:
         return context
     try:
-        context["git_commit"] = subprocess.check_output(
+        context["git_commit"] = subprocess.check_output(  # nosec B603
             [git_executable, "rev-parse", "--short", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        context["branch"] = subprocess.check_output(
+        context["branch"] = subprocess.check_output(  # nosec B603
             [git_executable, "rev-parse", "--abbrev-ref", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-    except (subprocess.SubprocessError, OSError, UnicodeDecodeError):
+    except (subprocess.SubprocessError, OSError, UnicodeError):
         logging.getLogger(__name__).debug(
             "Unable to resolve git context for logger metadata.",
             exc_info=True,
