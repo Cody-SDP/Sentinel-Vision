@@ -14,6 +14,27 @@ from ultralytics import YOLO
 
 
 class MainWindow(QMainWindow):
+    _FEED_IDLE_STYLE = """
+        QLabel {
+            border: 1px dashed #bfc3c8;
+            border-radius: 8px;
+            background-color: #f6f7f9;
+            color: #666666;
+            font-size: 16px;
+            padding: 0px;
+        }
+    """
+    _FEED_ACTIVE_STYLE = """
+        QLabel {
+            border: 1px solid #c9c9c9;
+            border-radius: 8px;
+            background-color: #111111;
+            color: #666666;
+            font-size: 16px;
+            padding: 0px;
+        }
+    """
+
     def __init__(
         self,
         model: YOLO | None = None,
@@ -51,17 +72,7 @@ class MainWindow(QMainWindow):
         self.feed_placeholder = QLabel("Webcam feed will appear here")
         self.feed_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feed_placeholder.setMinimumHeight(420)
-        self.feed_placeholder.setStyleSheet(
-            """
-            QLabel {
-                border: 2px dashed #c8c8c8;
-                border-radius: 10px;
-                background-color: #f7f7f7;
-                color: #666666;
-                font-size: 16px;
-            }
-            """
-        )
+        self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
 
         root_layout.addLayout(button_row)
         root_layout.addWidget(self.model_status)
@@ -135,6 +146,7 @@ class MainWindow(QMainWindow):
 
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+        self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
         self.camera_timer.start()
 
     def stop_camera(self) -> None:
@@ -147,6 +159,7 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.feed_placeholder.setPixmap(QPixmap())
         self.feed_placeholder.setText("Webcam feed will appear here")
+        self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
         self._last_detections = []
 
     def update_frame(self) -> None:
@@ -172,16 +185,38 @@ class MainWindow(QMainWindow):
                 self._run_inference, frame.copy()
             )
 
+        frame_h, frame_w = frame.shape[:2]
         for x1, y1, x2, y2, label in self._last_detections:
+            x1 = max(0, min(x1, frame_w - 1))
+            y1 = max(0, min(y1, frame_h - 1))
+            x2 = max(0, min(x2, frame_w - 1))
+            y2 = max(0, min(y2, frame_h - 1))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5
+            thickness = 2
+            (text_w, text_h), baseline = cv2.getTextSize(
+                label, font, font_scale, thickness
+            )
+            text_x = min(max(0, x1), max(0, frame_w - text_w - 2))
+            if y1 - 8 - text_h >= 0:
+                text_y = y1 - 8
+            else:
+                text_y = min(frame_h - baseline - 2, y1 + text_h + 8)
+            text_y = max(text_h + 2, text_y)
+
             cv2.putText(
                 frame,
                 label,
-                (x1, max(20, y1 - 8)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                (text_x, text_y),
+                font,
+                font_scale,
                 (0, 255, 0),
-                2,
+                thickness,
                 cv2.LINE_AA,
             )
 
@@ -196,7 +231,7 @@ class MainWindow(QMainWindow):
             QImage.Format.Format_RGB888,
         )
         pixmap = QPixmap.fromImage(image).scaled(
-            self.feed_placeholder.size(),
+            self.feed_placeholder.contentsRect().size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
