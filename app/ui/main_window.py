@@ -11,10 +11,12 @@ except Exception:
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -23,13 +25,18 @@ from ultralytics import YOLO
 
 
 class MainWindow(QMainWindow):
+    _IDLE_PREVIEW_TEXT = (
+        '<div style="text-align: center;">'
+        '<div style="font-size: 16px; font-weight: 600; color: #4a4a4a;">No source active</div>'
+        '<div style="font-size: 13px; color: #6b6f76;">Click Start Source to begin detection</div>'
+        "</div>"
+    )
     _FEED_IDLE_STYLE = """
         QLabel {
-            border: 1px dashed #bfc3c8;
-            border-radius: 8px;
-            background-color: #f6f7f9;
+            border: none;
+            border-radius: 6px;
+            background-color: #f7f8fa;
             color: #666666;
-            font-size: 16px;
             padding: 0px;
         }
     """
@@ -59,7 +66,7 @@ class MainWindow(QMainWindow):
 
         root_layout = QVBoxLayout(central_widget)
         root_layout.setContentsMargins(16, 16, 16, 16)
-        root_layout.setSpacing(12)
+        root_layout.setSpacing(8)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(8)
@@ -86,7 +93,6 @@ class MainWindow(QMainWindow):
 
         self.start_button = QPushButton("Start Source")
         self.stop_button = QPushButton("Stop Source")
-        self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_camera)
         self.stop_button.clicked.connect(self.stop_camera)
 
@@ -95,6 +101,9 @@ class MainWindow(QMainWindow):
         self.fps_label = QLabel("FPS: --")
         self.fps_label.setStyleSheet("color: #444444; font-size: 13px;")
         button_row.addWidget(self.fps_label)
+        self.status_label = QLabel("Status: Idle")
+        self.status_label.setStyleSheet("color: #444444; font-size: 13px;")
+        button_row.addWidget(self.status_label)
         button_row.addStretch()
 
         confidence_row = QHBoxLayout()
@@ -122,14 +131,69 @@ class MainWindow(QMainWindow):
 
         self.feed_placeholder = QLabel("Source preview will appear here")
         self.feed_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.feed_placeholder.setMinimumHeight(420)
+        self.feed_placeholder.setMinimumHeight(240)
+        self.feed_placeholder.setMinimumSize(0, 0)
+        self.feed_placeholder.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+        )
         self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
+        self.feed_placeholder.setText(self._IDLE_PREVIEW_TEXT)
 
-        root_layout.addLayout(source_row)
-        root_layout.addLayout(button_row)
-        root_layout.addLayout(confidence_row)
-        root_layout.addWidget(self.model_status)
-        root_layout.addWidget(self.feed_placeholder, stretch=1)
+        self.preview_frame = QFrame()
+        self.preview_frame.setStyleSheet(
+            "QFrame { border: 1px solid #d8dde3; border-radius: 10px; background-color: #fbfcfd; }"
+        )
+        self.preview_frame.setMinimumSize(640, 360)
+        self.preview_frame.setMaximumSize(960, 540)
+        self.preview_frame.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
+        preview_layout = QVBoxLayout(self.preview_frame)
+        preview_layout.setContentsMargins(6, 6, 6, 6)
+        preview_layout.setSpacing(0)
+        preview_layout.addWidget(self.feed_placeholder)
+
+        source_section = QWidget()
+        source_layout = QVBoxLayout(source_section)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        source_layout.setSpacing(2)
+        source_header = QLabel("Source")
+        source_header.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        source_layout.addWidget(source_header)
+        source_layout.addLayout(source_row)
+
+        controls_section = QWidget()
+        controls_layout = QVBoxLayout(controls_section)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(2)
+        controls_header = QLabel("Controls")
+        controls_header.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        controls_layout.addWidget(controls_header)
+        controls_layout.addLayout(button_row)
+
+        detection_section = QWidget()
+        detection_layout = QVBoxLayout(detection_section)
+        detection_layout.setContentsMargins(0, 0, 0, 0)
+        detection_layout.setSpacing(2)
+        detection_header = QLabel("Detection Settings")
+        detection_header.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        detection_layout.addWidget(detection_header)
+        detection_layout.addLayout(confidence_row)
+        detection_layout.addWidget(self.model_status)
+
+        top_controls = QWidget()
+        top_controls_layout = QVBoxLayout(top_controls)
+        top_controls_layout.setContentsMargins(0, 0, 0, 0)
+        top_controls_layout.setSpacing(6)
+        top_controls_layout.addWidget(source_section)
+        top_controls_layout.addWidget(controls_section)
+        top_controls_layout.addWidget(detection_section)
+
+        root_layout.addWidget(top_controls)
+        root_layout.addWidget(
+            self.preview_frame, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
+        root_layout.addStretch(1)
 
         self.source_file_path: str | None = None
         self.camera: cv2.VideoCapture | None = None
@@ -141,7 +205,28 @@ class MainWindow(QMainWindow):
         self._last_detections: list[tuple[int, int, int, int, float, str]] = []
         self._last_frame_ts: float | None = None
         self._fps: float = 0.0
+        self._current_preview_pixmap: QPixmap | None = None
+        self.state = "idle"  # possible values: "idle", "running", "error"
+        self.update_ui_state()
         self._on_source_changed()
+
+    def update_ui_state(self) -> None:
+        # Centralized state-driven UI updates for status and Start/Stop controls.
+        if self.state == "running":
+            self.status_label.setText("Status: Running")
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            return
+
+        if self.state == "error":
+            self.status_label.setText("Status: Error")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(True)
+            return
+
+        self.status_label.setText("Status: Idle")
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
     def _update_confidence_label(self, value: int) -> None:
         self.confidence_value_label.setText(f"{value / 100:.2f}")
@@ -325,28 +410,7 @@ class MainWindow(QMainWindow):
                 cv2.LINE_AA,
             )
 
-        target_size = self.feed_placeholder.contentsRect().size()
-        target_w = max(1, target_size.width())
-        target_h = max(1, target_size.height())
-
-        frame_h, frame_w = frame.shape[:2]
-        frame_aspect = frame_w / max(1, frame_h)
-        target_aspect = target_w / max(1, target_h)
-
-        if frame_aspect > target_aspect:
-            # Frame is wider than target: crop left/right
-            new_w = int(frame_h * target_aspect)
-            x_offset = max(0, (frame_w - new_w) // 2)
-            cropped = frame[:, x_offset:x_offset + new_w]
-        elif frame_aspect < target_aspect:
-            # Frame is taller than target: crop top/bottom
-            new_h = int(frame_w / target_aspect)
-            y_offset = max(0, (frame_h - new_h) // 2)
-            cropped = frame[y_offset:y_offset + new_h, :]
-        else:
-            cropped = frame
-
-        rgb_frame = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, channels = rgb_frame.shape
         bytes_per_line = channels * width
         image = QImage(
@@ -356,85 +420,106 @@ class MainWindow(QMainWindow):
             bytes_per_line,
             QImage.Format.Format_RGB888,
         )
-        pixmap = QPixmap.fromImage(image).scaled(
-            target_w,
-            target_h,
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
+        self._current_preview_pixmap = QPixmap.fromImage(image.copy())
         self.feed_placeholder.setText("")
-        self.feed_placeholder.setPixmap(pixmap)
+        self._update_preview_pixmap()
 
-    def start_camera(self) -> None:
-        if self.camera is not None and self.camera.isOpened():
+    def _update_preview_pixmap(self) -> None:
+        if self._current_preview_pixmap is None:
             return
 
-        source_kind = self.source_selector.currentData()
-        self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
-        self.fps_label.setText("FPS: --")
-        self._last_frame_ts = None
-        self._fps = 0.0
-        self._last_detections = []
+        target_size = self.feed_placeholder.contentsRect().size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return
 
-        if source_kind == "webcam":
-            webcam_index = int(self.webcam_selector.currentData())
-            if webcam_index < 0:
-                self.feed_placeholder.setText("No webcam available")
+        scaled_pixmap = self._current_preview_pixmap.scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.feed_placeholder.setPixmap(scaled_pixmap)
+
+    def start_camera(self) -> None:
+        try:
+            if self.camera is not None and self.camera.isOpened():
+                return
+
+            source_kind = self.source_selector.currentData()
+            self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
+            self.fps_label.setText("FPS: --")
+            self._last_frame_ts = None
+            self._fps = 0.0
+            self._last_detections = []
+
+            if source_kind == "webcam":
+                webcam_index = int(self.webcam_selector.currentData())
+                if webcam_index < 0:
+                    self.feed_placeholder.setText("No webcam available")
+                    self.feed_placeholder.setPixmap(QPixmap())
+                    return
+
+                self.camera = self._open_webcam_capture(webcam_index)
+                if self.camera is None:
+                    self.feed_placeholder.setText("Unable to open selected webcam")
+                    self.feed_placeholder.setPixmap(QPixmap())
+                    return
+
+                self.state = "running"
+                self.update_ui_state()
+                self.source_selector.setEnabled(False)
+                self.webcam_selector.setEnabled(False)
+                self.select_file_button.setEnabled(False)
+                self.camera_timer.start()
+                return
+
+            if not self.source_file_path:
+                self.feed_placeholder.setText("Select a video file first")
                 self.feed_placeholder.setPixmap(QPixmap())
                 return
 
-            self.camera = self._open_webcam_capture(webcam_index)
-            if self.camera is None:
-                self.feed_placeholder.setText("Unable to open selected webcam")
+            self.camera = cv2.VideoCapture(self.source_file_path)
+            if not self.camera.isOpened():
+                self.camera.release()
+                self.camera = None
+                self.feed_placeholder.setText("Unable to open video file")
                 self.feed_placeholder.setPixmap(QPixmap())
                 return
 
-            self.start_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
+            self.state = "running"
+            self.update_ui_state()
             self.source_selector.setEnabled(False)
             self.webcam_selector.setEnabled(False)
             self.select_file_button.setEnabled(False)
             self.camera_timer.start()
-            return
-
-        if not self.source_file_path:
-            self.feed_placeholder.setText("Select a video file first")
-            self.feed_placeholder.setPixmap(QPixmap())
-            return
-
-        self.camera = cv2.VideoCapture(self.source_file_path)
-        if not self.camera.isOpened():
-            self.camera.release()
-            self.camera = None
-            self.feed_placeholder.setText("Unable to open video file")
-            self.feed_placeholder.setPixmap(QPixmap())
-            return
-
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.source_selector.setEnabled(False)
-        self.webcam_selector.setEnabled(False)
-        self.select_file_button.setEnabled(False)
-        self.camera_timer.start()
+        except Exception:
+            self.state = "error"
+            self.update_ui_state()
+            raise
 
     def stop_camera(self) -> None:
-        self.camera_timer.stop()
-        if self.camera is not None:
-            self.camera.release()
-            self.camera = None
+        try:
+            self.camera_timer.stop()
+            if self.camera is not None:
+                self.camera.release()
+                self.camera = None
 
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.source_selector.setEnabled(True)
-        self.webcam_selector.setEnabled(True)
-        self._on_source_changed()
-        self.feed_placeholder.setPixmap(QPixmap())
-        self.feed_placeholder.setText("Source preview will appear here")
-        self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
-        self._last_detections = []
-        self._last_frame_ts = None
-        self._fps = 0.0
-        self.fps_label.setText("FPS: --")
+            self.state = "idle"
+            self.update_ui_state()
+            self.source_selector.setEnabled(True)
+            self.webcam_selector.setEnabled(True)
+            self._on_source_changed()
+            self._current_preview_pixmap = None
+            self.feed_placeholder.setPixmap(QPixmap())
+            self.feed_placeholder.setText(self._IDLE_PREVIEW_TEXT)
+            self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
+            self._last_detections = []
+            self._last_frame_ts = None
+            self._fps = 0.0
+            self.fps_label.setText("FPS: --")
+        except Exception:
+            self.state = "error"
+            self.update_ui_state()
+            raise
 
     def update_frame(self) -> None:
         if self.camera is None:
@@ -477,3 +562,7 @@ class MainWindow(QMainWindow):
         self.stop_camera()
         self._inference_executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_preview_pixmap()
