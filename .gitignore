@@ -3,17 +3,37 @@ runs/
 datasets/
 logs/
 __pycache__/
+*.pyc
+*.pyo
+
+# Model weights
 *.pt
+
+# Images
 *.jpg
 *.png
 !results.png
 !val_batch0_pred.jpg
 !confusion_matrix.png
-# Exclude demo video files (too large for git); see demo/README.md
+
+# Demo videos
 demo/*.mp4
 demo/*.avi
 demo/*.mov
 demo/*.mkv
 demo/*.webm
-# Exclude local env overrides
+
+# Environment variables
 .env
+
+# Virtual environment
+.venv/
+venv/
+
+# Build / packaging
+build/
+dist/
+*.spec
+
+# VS Code
+.vscode/

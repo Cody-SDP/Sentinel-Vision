@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, model_status_text: str = "Model status unknown") -> None:
         super().__init__()
         self.setWindowTitle("Sentinel-Vision")
         self.resize(900, 600)
@@ -37,6 +37,10 @@ class MainWindow(QMainWindow):
         button_row.addWidget(self.stop_button)
         button_row.addStretch()
 
+        self.model_status = QLabel(model_status_text)
+        self.model_status.setWordWrap(True)
+        self.model_status.setStyleSheet("color: #444444; font-size: 13px;")
+
         self.feed_placeholder = QLabel("Webcam feed will appear here")
         self.feed_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feed_placeholder.setMinimumHeight(420)
@@ -53,6 +57,7 @@ class MainWindow(QMainWindow):
         )
 
         root_layout.addLayout(button_row)
+        root_layout.addWidget(self.model_status)
         root_layout.addWidget(self.feed_placeholder, stretch=1)
 
         self.camera: cv2.VideoCapture | None = None
