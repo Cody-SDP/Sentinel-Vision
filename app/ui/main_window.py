@@ -2,7 +2,14 @@ import cv2
 import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPauseAnimation,
+    QPropertyAnimation,
+    QSequentialAnimationGroup,
+    QTimer,
+    Qt,
+)
 from PySide6.QtGui import QImage, QPixmap
 try:
     from PySide6.QtMultimedia import QMediaDevices
@@ -12,8 +19,11 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QPushButton,
     QSizePolicy,
@@ -25,6 +35,17 @@ from ultralytics import YOLO
 
 
 class MainWindow(QMainWindow):
+    _ALERT_RULES = {
+        "phone_detected": {
+            "class_name": "cell phone",
+            "display_name": "Phone Detected",
+            "min_confidence": 0.90,
+            "cooldown": 5.0,
+            "enabled": True,
+        }
+    }
+    _MAX_PHONE_ALERT_ENTRIES = 20
+
     _IDLE_PREVIEW_TEXT = (
         '<div style="text-align: center;">'
         '<div style="font-size: 16px; font-weight: 600; color: #4a4a4a;">No source active</div>'
@@ -189,11 +210,95 @@ class MainWindow(QMainWindow):
         top_controls_layout.addWidget(controls_section)
         top_controls_layout.addWidget(detection_section)
 
-        root_layout.addWidget(top_controls)
-        root_layout.addWidget(
+        alerts_panel = QFrame()
+        alerts_panel.setMinimumWidth(260)
+        alerts_panel.setMaximumWidth(320)
+        alerts_panel.setStyleSheet("QFrame { border: none; background: transparent; }")
+        alerts_layout = QVBoxLayout(alerts_panel)
+        alerts_layout.setContentsMargins(0, 0, 0, 0)
+        alerts_layout.setSpacing(0)
+        alerts_title = QLabel("Detection Alerts")
+        alerts_title.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        alerts_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        active_alert_title = QLabel("Active Alert")
+        active_alert_title.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        active_alert_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.active_alert_label = QLabel("No active alerts")
+        self.active_alert_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.active_alert_label.setWordWrap(True)
+        self.active_alert_label.setMinimumHeight(52)
+        self.active_alert_label.setStyleSheet(
+            "QLabel {"
+            "color: #666666;"
+            "font-size: 13px;"
+            "font-weight: 500;"
+            "padding: 0px;"
+            "}"
+        )
+        self._active_alert_opacity = QGraphicsOpacityEffect(self.active_alert_label)
+        self.active_alert_label.setGraphicsEffect(self._active_alert_opacity)
+        self._active_alert_opacity.setOpacity(1.0)
+        self._active_alert_animation = QSequentialAnimationGroup(self)
+        fade_in = QPropertyAnimation(self._active_alert_opacity, b"opacity")
+        fade_in.setDuration(150)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+        hold = QPauseAnimation(3000)
+        fade_out = QPropertyAnimation(self._active_alert_opacity, b"opacity")
+        fade_out.setDuration(650)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._active_alert_animation.addAnimation(fade_in)
+        self._active_alert_animation.addAnimation(hold)
+        self._active_alert_animation.addAnimation(fade_out)
+        self._active_alert_animation.finished.connect(self._clear_active_alert_display)
+        recent_alerts_title = QLabel("Recent Alerts")
+        recent_alerts_title.setStyleSheet("color: #555555; font-size: 11px; font-weight: 600;")
+        recent_alerts_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.alert_list = QListWidget()
+        self.alert_list.setStyleSheet(
+            "QListWidget {"
+            "border: none;"
+            "background: transparent;"
+            "padding: 0px;"
+            "font-size: 12px;"
+            "}"
+            "QListWidget::item {"
+            "padding: 6px 0px;"
+            "border-bottom: 1px solid #edf1f5;"
+            "}"
+        )
+        alerts_layout.addWidget(alerts_title)
+        alerts_layout.addSpacing(8)
+        alerts_layout.addWidget(active_alert_title)
+        alerts_layout.addSpacing(6)
+        alerts_layout.addWidget(self.active_alert_label)
+        alerts_layout.addSpacing(14)
+        alerts_layout.addWidget(recent_alerts_title)
+        alerts_layout.addSpacing(6)
+        alerts_layout.addWidget(self.alert_list, stretch=1)
+
+        dashboard_layout = QHBoxLayout()
+        dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        dashboard_layout.setSpacing(12)
+        dashboard_layout.addWidget(alerts_panel)
+
+        main_content = QWidget()
+        main_content_layout = QVBoxLayout(main_content)
+        main_content_layout.setContentsMargins(0, 0, 0, 0)
+        main_content_layout.setSpacing(8)
+        main_content_layout.addWidget(top_controls)
+        main_content_layout.addWidget(
             self.preview_frame, alignment=Qt.AlignmentFlag.AlignHCenter
         )
-        root_layout.addStretch(1)
+        main_content_layout.addStretch(1)
+        dashboard_layout.addWidget(main_content, stretch=1)
+
+        root_layout.addLayout(dashboard_layout)
 
         self.source_file_path: str | None = None
         self.camera: cv2.VideoCapture | None = None
@@ -205,6 +310,9 @@ class MainWindow(QMainWindow):
         self._last_detections: list[tuple[int, int, int, int, float, str]] = []
         self._last_frame_ts: float | None = None
         self._fps: float = 0.0
+        self._alert_last_trigger_ts: dict[str, float] = {
+            rule_id: 0.0 for rule_id in self._ALERT_RULES
+        }
         self._current_preview_pixmap: QPixmap | None = None
         self.state = "idle"  # possible values: "idle", "running", "error"
         self.update_ui_state()
@@ -424,6 +532,77 @@ class MainWindow(QMainWindow):
         self.feed_placeholder.setText("")
         self._update_preview_pixmap()
 
+    def _clear_active_alert_display(self) -> None:
+        self.active_alert_label.setText("No active alerts")
+        self.active_alert_label.setStyleSheet(
+            "QLabel {"
+            "color: #666666;"
+            "font-size: 13px;"
+            "font-weight: 500;"
+            "padding: 0px;"
+            "}"
+        )
+        self._active_alert_opacity.setOpacity(1.0)
+
+    def _add_alert_history_entry(self, display_name: str, confidence: float) -> None:
+        timestamp = time.strftime("%I:%M:%S %p").lstrip("0")
+        self.alert_list.insertItem(
+            0,
+            QListWidgetItem(f"[{timestamp}] {display_name} ({confidence:.2f})"),
+        )
+        while self.alert_list.count() > self._MAX_PHONE_ALERT_ENTRIES:
+            self.alert_list.takeItem(self.alert_list.count() - 1)
+
+    def _show_active_alert(self, display_name: str, confidence: float) -> None:
+        self.active_alert_label.setText(f"\u26a0 {display_name} ({confidence:.2f})")
+        self.active_alert_label.setStyleSheet(
+            "QLabel {"
+            "border: 1px solid #c73a3a;"
+            "border-radius: 8px;"
+            "background-color: #fff2f2;"
+            "color: #8c1d1d;"
+            "font-size: 14px;"
+            "font-weight: 700;"
+            "padding: 8px 10px;"
+            "}"
+        )
+        self._active_alert_animation.stop()
+        self._active_alert_opacity.setOpacity(0.0)
+        self._active_alert_animation.start()
+
+    def _evaluate_alert_rules(
+        self,
+        detections: list[tuple[int, int, int, int, float, str]],
+    ) -> None:
+        best_confidence_by_rule: dict[str, float] = {}
+
+        for _, _, _, _, confidence, label in detections:
+            class_name = label.rsplit(" ", 1)[0].strip().lower()
+            for rule_id, rule in self._ALERT_RULES.items():
+                if not bool(rule.get("enabled", True)):
+                    continue
+                if class_name != str(rule.get("class_name", "")).lower():
+                    continue
+                min_confidence = float(rule.get("min_confidence", 0.0))
+                if confidence < min_confidence:
+                    continue
+                existing = best_confidence_by_rule.get(rule_id)
+                if existing is None or confidence > existing:
+                    best_confidence_by_rule[rule_id] = confidence
+
+        now = time.time()
+        for rule_id, confidence in best_confidence_by_rule.items():
+            rule = self._ALERT_RULES[rule_id]
+            cooldown = float(rule.get("cooldown", 0.0))
+            last_ts = self._alert_last_trigger_ts.get(rule_id, 0.0)
+            if now - last_ts < cooldown:
+                continue
+
+            self._alert_last_trigger_ts[rule_id] = now
+            display_name = str(rule.get("display_name", rule_id))
+            self._add_alert_history_entry(display_name, confidence)
+            self._show_active_alert(display_name, confidence)
+
     def _update_preview_pixmap(self) -> None:
         if self._current_preview_pixmap is None:
             return
@@ -450,6 +629,11 @@ class MainWindow(QMainWindow):
             self._last_frame_ts = None
             self._fps = 0.0
             self._last_detections = []
+            self._alert_last_trigger_ts = {
+                rule_id: 0.0 for rule_id in self._ALERT_RULES
+            }
+            self._active_alert_animation.stop()
+            self._clear_active_alert_display()
 
             if source_kind == "webcam":
                 webcam_index = int(self.webcam_selector.currentData())
@@ -515,6 +699,8 @@ class MainWindow(QMainWindow):
             self._last_detections = []
             self._last_frame_ts = None
             self._fps = 0.0
+            self._active_alert_animation.stop()
+            self._clear_active_alert_display()
             self.fps_label.setText("FPS: --")
         except Exception:
             self.state = "error"
@@ -537,6 +723,7 @@ class MainWindow(QMainWindow):
         if self._inference_future is not None and self._inference_future.done():
             try:
                 self._last_detections = self._inference_future.result()
+                self._evaluate_alert_rules(self._last_detections)
             except Exception:
                 self._last_detections = []
             finally:
