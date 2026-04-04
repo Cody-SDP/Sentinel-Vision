@@ -1,4 +1,5 @@
 import cv2
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
@@ -64,6 +65,9 @@ class MainWindow(QMainWindow):
 
         button_row.addWidget(self.start_button)
         button_row.addWidget(self.stop_button)
+        self.fps_label = QLabel("FPS: --")
+        self.fps_label.setStyleSheet("color: #444444; font-size: 13px;")
+        button_row.addWidget(self.fps_label)
         button_row.addStretch()
 
         confidence_row = QHBoxLayout()
@@ -106,6 +110,8 @@ class MainWindow(QMainWindow):
         self._inference_executor = ThreadPoolExecutor(max_workers=1)
         self._inference_future: Future | None = None
         self._last_detections: list[tuple[int, int, int, int, float, str]] = []
+        self._last_frame_ts: float | None = None
+        self._fps: float = 0.0
 
     def _update_confidence_label(self, value: int) -> None:
         self.confidence_value_label.setText(f"{value / 100:.2f}")
@@ -171,6 +177,9 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
+        self.fps_label.setText("FPS: --")
+        self._last_frame_ts = None
+        self._fps = 0.0
         self.camera_timer.start()
 
     def stop_camera(self) -> None:
@@ -185,6 +194,9 @@ class MainWindow(QMainWindow):
         self.feed_placeholder.setText("Webcam feed will appear here")
         self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
         self._last_detections = []
+        self._last_frame_ts = None
+        self._fps = 0.0
+        self.fps_label.setText("FPS: --")
 
     def update_frame(self) -> None:
         if self.camera is None:
@@ -208,6 +220,15 @@ class MainWindow(QMainWindow):
             self._inference_future = self._inference_executor.submit(
                 self._run_inference, frame.copy()
             )
+
+        now = time.perf_counter()
+        if self._last_frame_ts is not None:
+            dt = now - self._last_frame_ts
+            if dt > 0:
+                current_fps = 1.0 / dt
+                self._fps = current_fps if self._fps == 0.0 else (self._fps * 0.9 + current_fps * 0.1)
+                self.fps_label.setText(f"FPS: {self._fps:.1f}")
+        self._last_frame_ts = now
 
         frame_h, frame_w = frame.shape[:2]
         confidence_threshold = self.confidence_slider.value() / 100.0
