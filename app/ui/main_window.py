@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -65,6 +66,25 @@ class MainWindow(QMainWindow):
         button_row.addWidget(self.stop_button)
         button_row.addStretch()
 
+        confidence_row = QHBoxLayout()
+        confidence_row.setSpacing(8)
+        confidence_label = QLabel("Confidence Threshold")
+        self.confidence_slider = QSlider(Qt.Orientation.Horizontal)
+        self.confidence_slider.setRange(0, 100)
+        self.confidence_slider.setValue(25)
+        self.confidence_slider.setSingleStep(1)
+        self.confidence_slider.setPageStep(5)
+        self.confidence_value_label = QLabel()
+        self.confidence_value_label.setMinimumWidth(40)
+        self.confidence_value_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.confidence_slider.valueChanged.connect(self._update_confidence_label)
+        self._update_confidence_label(self.confidence_slider.value())
+        confidence_row.addWidget(confidence_label)
+        confidence_row.addWidget(self.confidence_slider, stretch=1)
+        confidence_row.addWidget(self.confidence_value_label)
+
         self.model_status = QLabel(model_status_text)
         self.model_status.setWordWrap(True)
         self.model_status.setStyleSheet("color: #444444; font-size: 13px;")
@@ -75,6 +95,7 @@ class MainWindow(QMainWindow):
         self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
 
         root_layout.addLayout(button_row)
+        root_layout.addLayout(confidence_row)
         root_layout.addWidget(self.model_status)
         root_layout.addWidget(self.feed_placeholder, stretch=1)
 
@@ -84,7 +105,10 @@ class MainWindow(QMainWindow):
         self.camera_timer.timeout.connect(self.update_frame)
         self._inference_executor = ThreadPoolExecutor(max_workers=1)
         self._inference_future: Future | None = None
-        self._last_detections: list[tuple[int, int, int, int, str]] = []
+        self._last_detections: list[tuple[int, int, int, int, float, str]] = []
+
+    def _update_confidence_label(self, value: int) -> None:
+        self.confidence_value_label.setText(f"{value / 100:.2f}")
 
     def _run_inference(self, frame_bgr):
         if self.model is None:
@@ -116,7 +140,7 @@ class MainWindow(QMainWindow):
         confs = boxes.conf.cpu().numpy() if boxes.conf is not None else []
         classes = boxes.cls.cpu().numpy().astype(int) if boxes.cls is not None else []
 
-        detections: list[tuple[int, int, int, int, str]] = []
+        detections: list[tuple[int, int, int, int, float, str]] = []
         scale_back = 1.0 / scale if scale < 1.0 else 1.0
         for i, box in enumerate(xyxy):
             x1, y1, x2, y2 = box.tolist()
@@ -128,7 +152,7 @@ class MainWindow(QMainWindow):
             class_name = names.get(cls_idx, str(cls_idx))
             confidence = float(confs[i]) if i < len(confs) else 0.0
             label = f"{class_name} {confidence:.2f}"
-            detections.append((x1, y1, x2, y2, label))
+            detections.append((x1, y1, x2, y2, confidence, label))
 
         return detections
 
@@ -186,7 +210,11 @@ class MainWindow(QMainWindow):
             )
 
         frame_h, frame_w = frame.shape[:2]
-        for x1, y1, x2, y2, label in self._last_detections:
+        confidence_threshold = self.confidence_slider.value() / 100.0
+        for x1, y1, x2, y2, confidence, label in self._last_detections:
+            if confidence < confidence_threshold:
+                continue
+
             x1 = max(0, min(x1, frame_w - 1))
             y1 = max(0, min(y1, frame_h - 1))
             x2 = max(0, min(x2, frame_w - 1))
