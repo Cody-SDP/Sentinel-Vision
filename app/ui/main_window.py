@@ -1,4 +1,5 @@
 import cv2
+from concurrent.futures import Future, ThreadPoolExecutor
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
@@ -9,11 +10,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ultralytics import YOLO
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, model_status_text: str = "Model status unknown") -> None:
+    def __init__(
+        self,
+        model: YOLO | None = None,
+        model_status_text: str = "Model status unknown",
+    ) -> None:
         super().__init__()
+        self.model = model
         self.setWindowTitle("Sentinel-Vision")
         self.resize(900, 600)
 
@@ -64,6 +71,55 @@ class MainWindow(QMainWindow):
         self.camera_timer = QTimer(self)
         self.camera_timer.setInterval(30)
         self.camera_timer.timeout.connect(self.update_frame)
+        self._inference_executor = ThreadPoolExecutor(max_workers=1)
+        self._inference_future: Future | None = None
+        self._last_detections: list[tuple[int, int, int, int, str]] = []
+
+    def _run_inference(self, frame_bgr):
+        if self.model is None:
+            return []
+
+        frame_h, frame_w = frame_bgr.shape[:2]
+        infer_size = 640
+        scale = min(infer_size / frame_w, infer_size / frame_h, 1.0)
+        if scale < 1.0:
+            infer_w = max(1, int(frame_w * scale))
+            infer_h = max(1, int(frame_h * scale))
+            infer_frame = cv2.resize(
+                frame_bgr, (infer_w, infer_h), interpolation=cv2.INTER_LINEAR
+            )
+        else:
+            infer_frame = frame_bgr
+
+        results = self.model.predict(source=infer_frame, verbose=False)
+        if not results:
+            return []
+
+        result = results[0]
+        boxes = result.boxes
+        if boxes is None or boxes.xyxy is None:
+            return []
+
+        names = result.names or {}
+        xyxy = boxes.xyxy.cpu().numpy()
+        confs = boxes.conf.cpu().numpy() if boxes.conf is not None else []
+        classes = boxes.cls.cpu().numpy().astype(int) if boxes.cls is not None else []
+
+        detections: list[tuple[int, int, int, int, str]] = []
+        scale_back = 1.0 / scale if scale < 1.0 else 1.0
+        for i, box in enumerate(xyxy):
+            x1, y1, x2, y2 = box.tolist()
+            x1 = int(max(0, x1 * scale_back))
+            y1 = int(max(0, y1 * scale_back))
+            x2 = int(max(0, x2 * scale_back))
+            y2 = int(max(0, y2 * scale_back))
+            cls_idx = int(classes[i]) if i < len(classes) else -1
+            class_name = names.get(cls_idx, str(cls_idx))
+            confidence = float(confs[i]) if i < len(confs) else 0.0
+            label = f"{class_name} {confidence:.2f}"
+            detections.append((x1, y1, x2, y2, label))
+
+        return detections
 
     def start_camera(self) -> None:
         if self.camera is not None and self.camera.isOpened():
@@ -91,6 +147,7 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.feed_placeholder.setPixmap(QPixmap())
         self.feed_placeholder.setText("Webcam feed will appear here")
+        self._last_detections = []
 
     def update_frame(self) -> None:
         if self.camera is None:
@@ -101,6 +158,32 @@ class MainWindow(QMainWindow):
             self.stop_camera()
             self.feed_placeholder.setText("Unable to read from webcam")
             return
+
+        if self._inference_future is not None and self._inference_future.done():
+            try:
+                self._last_detections = self._inference_future.result()
+            except Exception:
+                self._last_detections = []
+            finally:
+                self._inference_future = None
+
+        if self.model is not None and self._inference_future is None:
+            self._inference_future = self._inference_executor.submit(
+                self._run_inference, frame.copy()
+            )
+
+        for x1, y1, x2, y2, label in self._last_detections:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                label,
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, channels = rgb_frame.shape
@@ -122,4 +205,5 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.stop_camera()
+        self._inference_executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

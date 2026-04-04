@@ -16,7 +16,7 @@ def main() -> int:
             f"Model unavailable: {model_result.error or 'Unknown model loading error'}"
         )
 
-    window = MainWindow(model_status_text=model_status_text)
+    window = MainWindow(model=model_result.model, model_status_text=model_status_text)
     window.show()
     return app.exec()
 
