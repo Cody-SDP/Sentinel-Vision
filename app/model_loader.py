@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 from ultralytics import YOLO
 
 
-DEFAULT_MODEL_PATH = "yolov8m.pt"
+DEFAULT_MODEL_PATH = os.path.join("models", "yolov8m.pt")
 
 
 @dataclass(frozen=True)
@@ -17,8 +18,17 @@ class ModelLoadResult:
     error: str | None = None
 
 
+def _base_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.abspath(".")
+
+
 def resolve_model_path(explicit_path: str | None = None) -> str:
-    return explicit_path or os.environ.get("MODEL_PATH") or DEFAULT_MODEL_PATH
+    chosen = explicit_path or os.environ.get("MODEL_PATH") or DEFAULT_MODEL_PATH
+    if os.path.isabs(chosen):
+        return chosen
+    return os.path.join(_base_dir(), chosen)
 
 
 def load_model(weights_path: str | None = None) -> ModelLoadResult:
