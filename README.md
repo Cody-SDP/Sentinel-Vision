@@ -4,7 +4,7 @@
 Built by Cody Sims
 
 ## Preview
-![Sentinel Vision Demo](assets/demo.png)
+<img width="900" alt="Sentinel Vision Demo" src="https://github.com/user-attachments/assets/c76d87ad-db4a-4444-b5e5-3024066efbea" />
 
 [![Build](https://img.shields.io/github/actions/workflow/status/Cody-SDP/Sentinel-Vision/main.yml?label=build)](https://github.com/Cody-SDP/Sentinel-Vision/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
