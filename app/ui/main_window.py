@@ -1,9 +1,16 @@
 import cv2
+import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
+try:
+    from PySide6.QtMultimedia import QMediaDevices
+except Exception:
+    QMediaDevices = None
 from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -54,11 +61,31 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(16, 16, 16, 16)
         root_layout.setSpacing(12)
 
+        source_row = QHBoxLayout()
+        source_row.setSpacing(8)
+        source_label = QLabel("Source")
+        self.source_selector = QComboBox()
+        self.source_selector.addItem("Webcam", "webcam")
+        self.source_selector.addItem("Video File", "video")
+        self.source_selector.currentIndexChanged.connect(self._on_source_changed)
+        self.webcam_selector = QComboBox()
+        self._populate_webcam_selector()
+        self.webcam_selector.currentIndexChanged.connect(self._on_source_changed)
+        self.select_file_button = QPushButton("Choose File")
+        self.select_file_button.clicked.connect(self.select_source_file)
+        self.selected_file_label = QLabel("Using default webcam")
+        self.selected_file_label.setStyleSheet("color: #666666; font-size: 12px;")
+        source_row.addWidget(source_label)
+        source_row.addWidget(self.source_selector)
+        source_row.addWidget(self.webcam_selector)
+        source_row.addWidget(self.select_file_button)
+        source_row.addWidget(self.selected_file_label, stretch=1)
+
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
 
-        self.start_button = QPushButton("Start Camera")
-        self.stop_button = QPushButton("Stop Camera")
+        self.start_button = QPushButton("Start Source")
+        self.stop_button = QPushButton("Stop Source")
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_camera)
         self.stop_button.clicked.connect(self.stop_camera)
@@ -93,16 +120,18 @@ class MainWindow(QMainWindow):
         self.model_status.setWordWrap(True)
         self.model_status.setStyleSheet("color: #444444; font-size: 13px;")
 
-        self.feed_placeholder = QLabel("Webcam feed will appear here")
+        self.feed_placeholder = QLabel("Source preview will appear here")
         self.feed_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feed_placeholder.setMinimumHeight(420)
         self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
 
+        root_layout.addLayout(source_row)
         root_layout.addLayout(button_row)
         root_layout.addLayout(confidence_row)
         root_layout.addWidget(self.model_status)
         root_layout.addWidget(self.feed_placeholder, stretch=1)
 
+        self.source_file_path: str | None = None
         self.camera: cv2.VideoCapture | None = None
         self.camera_timer = QTimer(self)
         self.camera_timer.setInterval(30)
@@ -112,9 +141,99 @@ class MainWindow(QMainWindow):
         self._last_detections: list[tuple[int, int, int, int, float, str]] = []
         self._last_frame_ts: float | None = None
         self._fps: float = 0.0
+        self._on_source_changed()
 
     def _update_confidence_label(self, value: int) -> None:
         self.confidence_value_label.setText(f"{value / 100:.2f}")
+
+    def _open_webcam_capture(self, index: int) -> cv2.VideoCapture | None:
+        # Prefer DirectShow on Windows to reduce noisy probe warnings from unavailable indices.
+        backend = cv2.CAP_DSHOW if os.name == "nt" and hasattr(cv2, "CAP_DSHOW") else cv2.CAP_ANY
+        cap = cv2.VideoCapture(index, backend)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        return None
+
+    def _friendly_camera_names(self) -> dict[int, str]:
+        if QMediaDevices is None:
+            return {}
+        try:
+            devices = QMediaDevices.videoInputs()
+        except Exception:
+            return {}
+
+        names: dict[int, str] = {}
+        for idx, device in enumerate(devices):
+            description = device.description().strip()
+            if description:
+                names[idx] = description
+        return names
+
+    def _camera_label(self, camera_index: int, fallback_other_number: int, camera_name: str | None) -> str:
+        if camera_index == 0:
+            return f"Default Webcam ({camera_name})" if camera_name else "Default Webcam"
+        if camera_name:
+            return f"Other Camera ({camera_name})"
+        return f"Other Camera {fallback_other_number}"
+
+    def _populate_webcam_selector(self) -> None:
+        self.webcam_selector.clear()
+        found_indices: list[int] = []
+        friendly_names = self._friendly_camera_names()
+        for idx in range(5):
+            cap = self._open_webcam_capture(idx)
+            if cap is not None:
+                found_indices.append(idx)
+                cap.release()
+
+        if not found_indices:
+            self.webcam_selector.addItem("No webcams found", -1)
+            self.webcam_selector.setEnabled(False)
+            return
+
+        other_camera_number = 1
+        for idx in found_indices:
+            label = self._camera_label(
+                camera_index=idx,
+                fallback_other_number=other_camera_number,
+                camera_name=friendly_names.get(idx),
+            )
+            self.webcam_selector.addItem(label, idx)
+            if idx != 0:
+                other_camera_number += 1
+        self.webcam_selector.setEnabled(True)
+
+    def _on_source_changed(self) -> None:
+        if self.camera_timer.isActive() or (self.camera is not None and self.camera.isOpened()):
+            self.stop_camera()
+
+        source_kind = self.source_selector.currentData()
+        is_webcam = source_kind == "webcam"
+        self.webcam_selector.setVisible(is_webcam)
+        self.select_file_button.setVisible(not is_webcam)
+        self.select_file_button.setEnabled(not is_webcam)
+        if is_webcam:
+            if self.webcam_selector.currentData() is None or int(self.webcam_selector.currentData()) < 0:
+                self.selected_file_label.setText("No webcam available")
+            else:
+                self.selected_file_label.setText(f"Using {self.webcam_selector.currentText()}")
+        elif self.source_file_path is None:
+            self.selected_file_label.setText("No file selected")
+
+    def select_source_file(self) -> None:
+        source_kind = self.source_selector.currentData()
+        if source_kind == "video":
+            file_filter = "Video Files (*.mp4 *.avi *.mov *.mkv *.wmv)"
+        else:
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Source File", "", file_filter)
+        if not file_path:
+            return
+
+        self.source_file_path = file_path
+        self.selected_file_label.setText(os.path.basename(file_path))
 
     def _run_inference(self, frame_bgr):
         if self.model is None:
@@ -162,77 +281,14 @@ class MainWindow(QMainWindow):
 
         return detections
 
-    def start_camera(self) -> None:
-        if self.camera is not None and self.camera.isOpened():
-            return
-
-        self.camera = cv2.VideoCapture(0)
-        if not self.camera.isOpened():
-            self.camera.release()
-            self.camera = None
-            self.feed_placeholder.setText("No webcam available")
-            self.feed_placeholder.setPixmap(QPixmap())
-            return
-
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
-        self.fps_label.setText("FPS: --")
-        self._last_frame_ts = None
-        self._fps = 0.0
-        self.camera_timer.start()
-
-    def stop_camera(self) -> None:
-        self.camera_timer.stop()
-        if self.camera is not None:
-            self.camera.release()
-            self.camera = None
-
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.feed_placeholder.setPixmap(QPixmap())
-        self.feed_placeholder.setText("Webcam feed will appear here")
-        self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
-        self._last_detections = []
-        self._last_frame_ts = None
-        self._fps = 0.0
-        self.fps_label.setText("FPS: --")
-
-    def update_frame(self) -> None:
-        if self.camera is None:
-            return
-
-        ok, frame = self.camera.read()
-        if not ok:
-            self.stop_camera()
-            self.feed_placeholder.setText("Unable to read from webcam")
-            return
-
-        if self._inference_future is not None and self._inference_future.done():
-            try:
-                self._last_detections = self._inference_future.result()
-            except Exception:
-                self._last_detections = []
-            finally:
-                self._inference_future = None
-
-        if self.model is not None and self._inference_future is None:
-            self._inference_future = self._inference_executor.submit(
-                self._run_inference, frame.copy()
-            )
-
-        now = time.perf_counter()
-        if self._last_frame_ts is not None:
-            dt = now - self._last_frame_ts
-            if dt > 0:
-                current_fps = 1.0 / dt
-                self._fps = current_fps if self._fps == 0.0 else (self._fps * 0.9 + current_fps * 0.1)
-                self.fps_label.setText(f"FPS: {self._fps:.1f}")
-        self._last_frame_ts = now
-
+    def _draw_and_show_frame(
+        self,
+        frame,
+        detections: list[tuple[int, int, int, int, float, str]],
+    ) -> None:
         frame_h, frame_w = frame.shape[:2]
         confidence_threshold = self.confidence_slider.value() / 100.0
-        for x1, y1, x2, y2, confidence, label in self._last_detections:
+        for x1, y1, x2, y2, confidence, label in detections:
             if confidence < confidence_threshold:
                 continue
 
@@ -269,7 +325,28 @@ class MainWindow(QMainWindow):
                 cv2.LINE_AA,
             )
 
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        target_size = self.feed_placeholder.contentsRect().size()
+        target_w = max(1, target_size.width())
+        target_h = max(1, target_size.height())
+
+        frame_h, frame_w = frame.shape[:2]
+        frame_aspect = frame_w / max(1, frame_h)
+        target_aspect = target_w / max(1, target_h)
+
+        if frame_aspect > target_aspect:
+            # Frame is wider than target: crop left/right
+            new_w = int(frame_h * target_aspect)
+            x_offset = max(0, (frame_w - new_w) // 2)
+            cropped = frame[:, x_offset:x_offset + new_w]
+        elif frame_aspect < target_aspect:
+            # Frame is taller than target: crop top/bottom
+            new_h = int(frame_w / target_aspect)
+            y_offset = max(0, (frame_h - new_h) // 2)
+            cropped = frame[y_offset:y_offset + new_h, :]
+        else:
+            cropped = frame
+
+        rgb_frame = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
         height, width, channels = rgb_frame.shape
         bytes_per_line = channels * width
         image = QImage(
@@ -280,12 +357,121 @@ class MainWindow(QMainWindow):
             QImage.Format.Format_RGB888,
         )
         pixmap = QPixmap.fromImage(image).scaled(
-            self.feed_placeholder.contentsRect().size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
+            target_w,
+            target_h,
+            Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         self.feed_placeholder.setText("")
         self.feed_placeholder.setPixmap(pixmap)
+
+    def start_camera(self) -> None:
+        if self.camera is not None and self.camera.isOpened():
+            return
+
+        source_kind = self.source_selector.currentData()
+        self.feed_placeholder.setStyleSheet(self._FEED_ACTIVE_STYLE)
+        self.fps_label.setText("FPS: --")
+        self._last_frame_ts = None
+        self._fps = 0.0
+        self._last_detections = []
+
+        if source_kind == "webcam":
+            webcam_index = int(self.webcam_selector.currentData())
+            if webcam_index < 0:
+                self.feed_placeholder.setText("No webcam available")
+                self.feed_placeholder.setPixmap(QPixmap())
+                return
+
+            self.camera = self._open_webcam_capture(webcam_index)
+            if self.camera is None:
+                self.feed_placeholder.setText("Unable to open selected webcam")
+                self.feed_placeholder.setPixmap(QPixmap())
+                return
+
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.source_selector.setEnabled(False)
+            self.webcam_selector.setEnabled(False)
+            self.select_file_button.setEnabled(False)
+            self.camera_timer.start()
+            return
+
+        if not self.source_file_path:
+            self.feed_placeholder.setText("Select a video file first")
+            self.feed_placeholder.setPixmap(QPixmap())
+            return
+
+        self.camera = cv2.VideoCapture(self.source_file_path)
+        if not self.camera.isOpened():
+            self.camera.release()
+            self.camera = None
+            self.feed_placeholder.setText("Unable to open video file")
+            self.feed_placeholder.setPixmap(QPixmap())
+            return
+
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.source_selector.setEnabled(False)
+        self.webcam_selector.setEnabled(False)
+        self.select_file_button.setEnabled(False)
+        self.camera_timer.start()
+
+    def stop_camera(self) -> None:
+        self.camera_timer.stop()
+        if self.camera is not None:
+            self.camera.release()
+            self.camera = None
+
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.source_selector.setEnabled(True)
+        self.webcam_selector.setEnabled(True)
+        self._on_source_changed()
+        self.feed_placeholder.setPixmap(QPixmap())
+        self.feed_placeholder.setText("Source preview will appear here")
+        self.feed_placeholder.setStyleSheet(self._FEED_IDLE_STYLE)
+        self._last_detections = []
+        self._last_frame_ts = None
+        self._fps = 0.0
+        self.fps_label.setText("FPS: --")
+
+    def update_frame(self) -> None:
+        if self.camera is None:
+            return
+
+        ok, frame = self.camera.read()
+        if not ok:
+            self.stop_camera()
+            if self.source_selector.currentData() == "video":
+                self.feed_placeholder.setText("Video playback finished")
+            else:
+                self.feed_placeholder.setText("Unable to read from webcam")
+            return
+
+        if self._inference_future is not None and self._inference_future.done():
+            try:
+                self._last_detections = self._inference_future.result()
+            except Exception:
+                self._last_detections = []
+            finally:
+                self._inference_future = None
+
+        if self.model is not None and self._inference_future is None:
+            self._inference_future = self._inference_executor.submit(
+                self._run_inference, frame.copy()
+            )
+
+        now = time.perf_counter()
+        if self._last_frame_ts is not None:
+            dt = now - self._last_frame_ts
+            if dt > 0:
+                current_fps = 1.0 / dt
+                self._fps = current_fps if self._fps == 0.0 else (self._fps * 0.9 + current_fps * 0.1)
+                self.fps_label.setText(f"FPS: {self._fps:.1f}")
+        self._last_frame_ts = now
+
+        self._draw_and_show_frame(frame, self._last_detections)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.stop_camera()
