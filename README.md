@@ -1,113 +1,116 @@
 # 🛡️ Sentinel-Vision
 
-**Real-time object detection desktop app (YOLO-powered)**  
+**Custom-trained, real-time object detection system with a desktop interface (YOLO + PyTorch)**  
 Built by Cody Sims
 
 [![Build](https://img.shields.io/github/actions/workflow/status/Cody-SDP/Sentinel-Vision/main.yml?label=build)](https://github.com/Cody-SDP/Sentinel-Vision/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
+[![YOLOv8](https://img.shields.io/badge/model-YOLOv8m-purple)]()
+[![PyTorch](https://img.shields.io/badge/framework-PyTorch-red)]()
+[![CUDA](https://img.shields.io/badge/training-CUDA-green)]()
+[![Real-Time](https://img.shields.io/badge/inference-real--time-brightgreen)]()
 [![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow)](https://bandit.readthedocs.io/)
 [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![mAP](https://img.shields.io/badge/mAP@50-0.85-blue)]()
+
+---
+
+## 🎯 What This Does
+
+Sentinel-Vision is a **locally deployed AI system** that detects objects in real time using a **custom-trained YOLO model**.
+
+- Processes live webcam or video input
+- Detects objects frame-by-frame
+- Triggers alerts based on confidence thresholds
+
+### 🚨 Demo Behavior
+- Alert is triggered when a **cell phone is detected**
+- Confidence threshold set to **>90%**
+- Designed to demonstrate real-time monitoring + alert logic
 
 ---
 
 ## 🎥 Preview
-
-<img width="900" alt="Sentinel Vision Demo" src="https://github.com/user-attachments/assets/c76d87ad-db4a-4444-b5e5-3024066efbea" />
-
-> ⚠️ **Demo note:** In this preview, cell phone detection is used as the alert trigger and only activates above **90% confidence**.
+![Live Detection](assets/sentinel-vision-preview.png)
 
 ---
 
-## Overview
+## 🧠 Model Training & Evaluation
 
-Sentinel-Vision is a local, real-time object detection application for Windows.
+- Model: **YOLOv8m**
+- Framework: PyTorch (Ultralytics)
+- Training: **transfer learning on custom dataset**
+- Hardware: **CUDA-enabled GPU (local training)**
+- Epochs: ~50
 
-It uses a YOLO model to detect objects from:
+### 📊 Performance
+- Precision: ~0.87  
+- Recall: ~0.78  
+- mAP@50: ~0.85  
+- mAP@50-95: ~0.60  
 
-* your webcam  
-* or a video file  
+### 📈 Training Results
+![Training Results](assets/results.png)
+Training curves show consistent convergence with decreasing loss and increasing precision/recall, indicating stable model learning.
 
-All processing runs locally — no cloud required.
-
----
-
-## ✨ Features
-
-* Real-time object detection (YOLO)
-* Webcam + video file support
-* Confidence threshold control
-* FPS display
-* Multi-camera selection
-* Built-in alert system
-* Packaged Windows app (no Python required)
+### 📊 Confusion Matrix (Validation Set)
+![Confusion Matrix](assets/confusion_matrix.png)
 
 ---
 
-## 🔐 Security & Pipeline
+## ⚙️ System Overview
 
-* **Local-only processing** — no external data transmission  
-* No API calls or cloud dependencies  
-* CI pipeline includes:
-  - **SAST (Bandit)** for static code analysis  
-  - **SCA** for dependency vulnerability scanning  
-* Security checks run before execution workflows  
-* Dependencies are pinned for reproducibility  
+Pipeline:
 
-This project was built with a security-first mindset, focusing on safe execution, dependency integrity, and controlled runtime behavior.
+- ~15 FPS real-time inference
+- Bounding boxes + class labels + confidence scores
+- Adjustable detection threshold
+- Runs fully **on-device (no cloud)**
 
 ---
 
-## 📦 Download & Install
+## 💻 Application Features
 
-Download the latest Windows installer from **Releases**:
-
-- `Sentinel-Vision-Setup-1.3.0.exe`
-
-Then:
-
-1. Run the installer  
-2. Complete setup  
-3. Launch Sentinel-Vision from your desktop or Start Menu  
-
-> Windows may show a SmartScreen warning → click **More info → Run anyway**
+- Real-time object detection
+- Webcam + video file input
+- Confidence threshold slider
+- FPS + system status display
+- Multi-camera selection
+- Built-in alert system
+- Packaged as **Windows desktop app (.exe)**
 
 ---
 
-## 🧭 Usage
+## 🔐 Security & DevOps
 
-* Select source:
-  * Webcam  
-  * Video file  
-* Click **Start**  
-* Adjust confidence if needed  
-* View detections in real time  
+- Local-only processing (no external APIs)
+- CI/CD pipeline (GitHub Actions)
+- **SAST (Bandit)** + dependency scanning (SCA)
+- Pinned dependencies for reproducibility
+
+---
+
+## 📦 Install
+
+Download from **Releases**:
+
+Steps:
+1. Run installer  
+2. Launch app  
+3. Select input source  
+4. Click **Start**  
+
+> SmartScreen → “More info” → “Run anyway”
 
 ---
 
 ## 🖥️ Requirements
 
-* Windows machine  
-* Webcam (for live mode)  
+- Windows OS  
+- Webcam (for live detection)  
 
-Runs on CPU by default. GPU is optional.
-
----
-
-## 📝 Notes
-
-* First launch may take a few seconds  
-* Performance depends on your hardware  
-* This is a desktop AI application — not a cloud service  
-
----
-
-## 📁 Project
-
-This repository contains:
-
-* application source code  
-* build and packaging configuration  
-* Windows installer setup  
+Runs on CPU for inference.  
+GPU (CUDA) was used for **model training (not included in this repo)**.
 
 ---
 
