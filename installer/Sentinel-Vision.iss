@@ -1,6 +1,6 @@
 #define MyAppName "Sentinel-Vision"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.3.0"
+  #define MyAppVersion "1.3.1"
 #endif
 #define MyAppPublisher "Cody Sims"
 #define MyAppExeName "Sentinel-Vision.exe"
